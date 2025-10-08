@@ -623,7 +623,7 @@
             draw();
         });
 
-        // Eventos del mouse para canvas
+        // Eventos del mouse para canvas (sin cambios)
         function getMousePos(e) {
             let rect = canvas.getBoundingClientRect();
             mouse.x = e.clientX - rect.left;
@@ -938,7 +938,7 @@
             if (e.target.id === 'resize-modal') closeResizeModal();
         });
 
-        // Exportar GIF con gifenc (usando import dinámico para browser)
+        // Exportar GIF con gifenc (FIX: Preservar negros opacos)
         async function exportGif() {
             if (frames.length === 0) {
                 alert('No hay frames para exportar');
@@ -946,15 +946,14 @@
             }
             if (isResizingCanvas) exitResize();
             let oldEditing = isEditing;
-            isEditing = false; // Deseleccionar para no dibujar handles
+            isEditing = false;
             try {
-                // Import dinámico de gifenc
                 const { GIFEncoder, quantize, applyPalette } = await import('https://unpkg.com/gifenc');
 
-                const encoder = GIFEncoder(); // Crear encoder una vez
+                const encoder = GIFEncoder();
                 const width = canvas.width;
                 const height = canvas.height;
-                const frameDelay = Math.round(1000 / fps);
+                const frameDelay = Math.round(1000 / fps); // No usado directamente, pero para referencia
 
                 for (let f = 0; f < frames.length; f++) {
                     const frame = frames[f];
@@ -963,7 +962,6 @@
                     tempCanvas.height = height;
                     const tempCtx = tempCanvas.getContext('2d');
 
-                    // Limpiar sin rellenar para preservar alpha
                     tempCtx.clearRect(0, 0, width, height);
                     if (!transparent) {
                         tempCtx.fillStyle = 'white';
@@ -971,34 +969,35 @@
                     }
                     tempCtx.drawImage(frame.img, frame.x, frame.y, frame.w, frame.h);
 
-                    // Obtener datos RGBA
                     const imageData = tempCtx.getImageData(0, 0, width, height);
                     const data = imageData.data;
 
-                    // Opciones para quantize: soporte alpha si transparente
-                    const qOptions = transparent ? { format: 'rgba4444', oneBitAlpha: true } : {};
-                    const palette = quantize(data, 256, qOptions);
+                    // Opciones FIX: No forzar alpha en negros, usar más colores para mejor cuantización
+                    const qOptions = transparent 
+                        ? { format: 'rgba4444', oneBitAlpha: false, clearAlpha: false }  // FIX: Desactivar forzado de transparencias
+                        : { format: 'rgb565' };  // Opaque para no-transparent
+                    const palette = quantize(data, 128, qOptions);  // Menos colores para velocidad, pero ajustable
 
-                    // Aplicar paleta
-                    const aOptions = transparent ? { format: 'rgba4444' } : {};
+                    const aOptions = transparent ? { format: 'rgba4444' } : { format: 'rgb565' };
                     const index = applyPalette(data, palette, aOptions);
 
-                    // Opciones para writeFrame
-                    const wOptions = { palette };
+                    let wOptions = { palette };
                     if (transparent) {
                         wOptions.transparent = true;
-                        // Encontrar índice transparente (el primero con alpha=0)
-                        wOptions.transparentIndex = palette.findIndex(p => p[3] === 0) || 0;
+                        // FIX: Encontrar índice transparente seguro (no el de negro opaco)
+                        let transIndex = palette.findIndex(p => p[3] === 0 && (p[0] + p[1] + p[2]) < 10);  // Cerca de [0,0,0,0]
+                        if (transIndex === -1 || palette[transIndex].slice(0,3).every(c => c === 0)) {
+                            transIndex = palette.length - 1;  // Usar último si conflicto con negro
+                        }
+                        wOptions.transparentIndex = transIndex;
                     }
 
-                    // Agregar frame (duplicar por duración)
+                    // Duplicar por duración (simula delay)
                     for (let d = 0; d < frame.duration; d++) {
                         encoder.writeFrame(index, width, height, wOptions);
-                        // Delay se maneja en GIF via opciones, pero gifenc no tiene delay directo; usamos duplicados como antes
                     }
                 }
 
-                // Finalizar
                 encoder.finish();
                 const gifData = encoder.bytes();
                 const blob = new Blob([gifData], { type: 'image/gif' });
@@ -1012,7 +1011,7 @@
                 URL.revokeObjectURL(url);
             } catch (error) {
                 console.error('Error en export:', error);
-                alert('Error al exportar: ' + (error.message || 'Falla en la librería gifenc. Verifica conexión.'));
+                alert('Error al exportar: ' + (error.message || 'Falla en la librería. Verifica conexión.'));
             } finally {
                 isEditing = oldEditing;
                 draw();
