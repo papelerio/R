@@ -623,7 +623,7 @@
             draw();
         });
 
-        // Eventos del mouse para canvas (sin cambios)
+        // Eventos del mouse para canvas
         function getMousePos(e) {
             let rect = canvas.getBoundingClientRect();
             mouse.x = e.clientX - rect.left;
@@ -938,7 +938,7 @@
             if (e.target.id === 'resize-modal') closeResizeModal();
         });
 
-        // Exportar GIF con gifenc (FIX: Preservar negros opacos)
+        // Exportar GIF con gifenc (FIX FINAL: Transparencia exacta sin afectar negros)
         async function exportGif() {
             if (frames.length === 0) {
                 alert('No hay frames para exportar');
@@ -953,7 +953,7 @@
                 const encoder = GIFEncoder();
                 const width = canvas.width;
                 const height = canvas.height;
-                const frameDelay = Math.round(1000 / fps); // No usado directamente, pero para referencia
+                const frameDelay = Math.round(1000 / fps);  // Delay base en ms
 
                 for (let f = 0; f < frames.length; f++) {
                     const frame = frames[f];
@@ -972,11 +972,11 @@
                     const imageData = tempCtx.getImageData(0, 0, width, height);
                     const data = imageData.data;
 
-                    // Opciones FIX: No forzar alpha en negros, usar más colores para mejor cuantización
+                    // FIX: oneBitAlpha: 0 solo transparenta alpha exacto=0 (fondo), sin tocar negros opacos
                     const qOptions = transparent 
-                        ? { format: 'rgba4444', oneBitAlpha: false, clearAlpha: false }  // FIX: Desactivar forzado de transparencias
-                        : { format: 'rgb565' };  // Opaque para no-transparent
-                    const palette = quantize(data, 128, qOptions);  // Menos colores para velocidad, pero ajustable
+                        ? { format: 'rgba4444', oneBitAlpha: 0, clearAlpha: false }  // Umbral 0: solo cleared es transparente
+                        : { format: 'rgb565' };
+                    const palette = quantize(data, 128, qOptions);
 
                     const aOptions = transparent ? { format: 'rgba4444' } : { format: 'rgb565' };
                     const index = applyPalette(data, palette, aOptions);
@@ -984,18 +984,15 @@
                     let wOptions = { palette };
                     if (transparent) {
                         wOptions.transparent = true;
-                        // FIX: Encontrar índice transparente seguro (no el de negro opaco)
-                        let transIndex = palette.findIndex(p => p[3] === 0 && (p[0] + p[1] + p[2]) < 10);  // Cerca de [0,0,0,0]
-                        if (transIndex === -1 || palette[transIndex].slice(0,3).every(c => c === 0)) {
-                            transIndex = palette.length - 1;  // Usar último si conflicto con negro
-                        }
+                        // Encontrar índice para [0,0,0,0] exacto
+                        let transIndex = palette.findIndex(p => p[0] === 0 && p[1] === 0 && p[2] === 0 && p[3] === 0);
+                        if (transIndex === -1) transIndex = 0;  // Fallback al primero si no hay
                         wOptions.transparentIndex = transIndex;
                     }
 
-                    // Duplicar por duración (simula delay)
-                    for (let d = 0; d < frame.duration; d++) {
-                        encoder.writeFrame(index, width, height, wOptions);
-                    }
+                    // FIX: Usar delay nativo en ms (duración * frameDelay), sin duplicar frames
+                    const totalDelay = frameDelay * frame.duration;
+                    encoder.writeFrame(index, width, height, { ...wOptions, delay: totalDelay });
                 }
 
                 encoder.finish();
