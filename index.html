@@ -133,6 +133,30 @@
             background: #667eea;
             color: white;
         }
+        #middle {
+            display: flex;
+            flex: 1;
+        }
+        #left, #right {
+            width: 250px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            box-sizing: border-box;
+            position: relative;
+            overflow-y: auto;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        #left::-webkit-scrollbar, #right::-webkit-scrollbar {
+            width: 6px;
+        }
+        #left::-webkit-scrollbar-track, #right::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #left::-webkit-scrollbar-thumb, #right::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 10px;
+        }
         #canvas-container {
             flex: 1;
             display: flex;
@@ -147,26 +171,10 @@
             cursor: default;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             background: white;
-        }
-        #right {
-            width: 250px;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 20px;
-            box-sizing: border-box;
-            position: relative;
-            overflow-y: auto;
-            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
-            backdrop-filter: blur(10px);
-        }
-        #right::-webkit-scrollbar {
-            width: 6px;
-        }
-        #right::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        #right::-webkit-scrollbar-thumb {
-            background: #667eea;
-            border-radius: 10px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
         }
         button {
             display: block;
@@ -186,6 +194,13 @@
         button:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+        #resize-canvas {
+            background: linear-gradient(135deg, #2196F3, #1976D2);
+            color: white;
+        }
+        #resize-canvas:hover {
+            background: linear-gradient(135deg, #1976D2, #0D47A1);
         }
         #play {
             background: linear-gradient(135deg, #4CAF50, #45a049);
@@ -241,7 +256,7 @@
             font-weight: 500;
             color: #555;
         }
-        #timing-modal {
+        #timing-modal, #resize-modal {
             display: none;
             position: fixed;
             top: 0;
@@ -252,9 +267,9 @@
             z-index: 1000;
             backdrop-filter: blur(5px);
         }
-        #timing-table {
+        .modal-content {
             background: white;
-            margin: 5% auto;
+            margin: 10% auto;
             padding: 30px;
             max-height: 80vh;
             overflow-y: auto;
@@ -262,17 +277,18 @@
             min-width: 400px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             animation: modalSlideIn 0.3s ease;
+            text-align: center;
         }
         @keyframes modalSlideIn {
             from { transform: translateY(-50px); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
         }
-        #timing-table button {
+        .modal-content button {
             background: #667eea;
             color: white;
             width: auto;
             padding: 10px 20px;
-            margin-bottom: 20px;
+            margin: 10px;
         }
         table {
             border-collapse: collapse;
@@ -315,18 +331,23 @@
             <button onclick="addFromUrl()">Añadir</button>
         </div>
     </div>
-    <div id="canvas-container">
-        <canvas id="canvas" width="800" height="600"></canvas>
-    </div>
-    <div id="right">
-        <button id="play">Play</button>
-        <button id="restart">Reiniciar</button>
-        <button id="edit-times">Editar Tiempos</button>
-        <label>FPS: <input type="number" id="fps" value="24" min="1"></label>
-        <button id="export">Exportar GIF</button>
+    <div id="middle">
+        <div id="left">
+            <button id="resize-canvas">Modificar Tamaño del Canvas</button>
+        </div>
+        <div id="canvas-container">
+            <canvas id="canvas" width="800" height="600"></canvas>
+        </div>
+        <div id="right">
+            <button id="play">Play</button>
+            <button id="restart">Reiniciar</button>
+            <button id="edit-times">Editar Tiempos</button>
+            <label>FPS: <input type="number" id="fps" value="24" min="1"></label>
+            <button id="export">Exportar GIF</button>
+        </div>
     </div>
     <div id="timing-modal">
-        <div id="timing-table">
+        <div class="modal-content">
             <button onclick="closeModal()">Cerrar</button>
             <table>
                 <thead>
@@ -336,22 +357,35 @@
             </table>
         </div>
     </div>
+    <div id="resize-modal">
+        <div class="modal-content">
+            <p>¿Quieres modificar el interior dependiendo del porcentaje?</p>
+            <button onclick="startResize(true)">Sí</button>
+            <button onclick="startResize(false)">No</button>
+            <button onclick="closeResizeModal()">Cancelar</button>
+        </div>
+    </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gif.js.optimized@1.0.1/dist/gif.js"></script>
     <script>
         // Variables globales
         let frames = []; // {img: Image, x: number, y: number, w: number, h: number, duration: number}
         let currentFrame = 0;
         let canvas = document.getElementById('canvas');
         let ctx = canvas.getContext('2d');
+        let canvasContainer = document.getElementById('canvas-container');
         let isAnimating = false;
         let animId;
         let fps = 24;
         let totalDuration = 0;
         let isEditing = true;
+        let isResizingCanvas = false;
+        let scaleContent = undefined;
+        let originalJustify, originalAlign, originalTransform;
         let dragType = '';
         let dragStart = {x: 0, y: 0, w: 0, h: 0, x0: 0, y0: 0};
         let mouse = {x: 0, y: 0};
+        let initialClientX, initialClientY, initialLeft, initialTop, initialW, initialH;
 
         // Inicializar dibujo
         function draw() {
@@ -359,19 +393,23 @@
             if (frames.length > 0) {
                 let frame = frames[currentFrame];
                 ctx.drawImage(frame.img, frame.x, frame.y, frame.w, frame.h);
-                if (isEditing) {
-                    // Dibujar manejadores de redimensionamiento
-                    let size = 10;
-                    ctx.fillStyle = '#667eea';
-                    // NW
-                    ctx.fillRect(frame.x - size / 2, frame.y - size / 2, size, size);
-                    // NE
-                    ctx.fillRect(frame.x + frame.w - size / 2, frame.y - size / 2, size, size);
-                    // SW
-                    ctx.fillRect(frame.x - size / 2, frame.y + frame.h - size / 2, size, size);
-                    // SE
-                    ctx.fillRect(frame.x + frame.w - size / 2, frame.y + frame.h - size / 2, size, size);
-                }
+            }
+            let size = 10;
+            if (isEditing && !isResizingCanvas && frames.length > 0) {
+                let frame = frames[currentFrame];
+                ctx.fillStyle = '#667eea';
+                ctx.fillRect(frame.x - size / 2, frame.y - size / 2, size, size);
+                ctx.fillRect(frame.x + frame.w - size / 2, frame.y - size / 2, size, size);
+                ctx.fillRect(frame.x - size / 2, frame.y + frame.h - size / 2, size, size);
+                ctx.fillRect(frame.x + frame.w - size / 2, frame.y + frame.h - size / 2, size, size);
+            }
+            if (isResizingCanvas) {
+                let cSize = 15;
+                ctx.fillStyle = 'red';
+                ctx.fillRect(0, 0, cSize, cSize);
+                ctx.fillRect(canvas.width - cSize, 0, cSize, cSize);
+                ctx.fillRect(0, canvas.height - cSize, cSize, cSize);
+                ctx.fillRect(canvas.width - cSize, canvas.height - cSize, cSize, cSize);
             }
         }
 
@@ -471,18 +509,30 @@
         });
 
         // Eventos del mouse para canvas
-        canvas.addEventListener('mousemove', e => {
+        function getMousePos(e) {
             let rect = canvas.getBoundingClientRect();
             mouse.x = e.clientX - rect.left;
             mouse.y = e.clientY - rect.top;
+        }
+
+        canvas.addEventListener('mousemove', e => {
+            getMousePos(e);
+            let overHandle = '';
+            if (isResizingCanvas) {
+                let size = 15;
+                if (mouse.x < size && mouse.y < size) overHandle = 'nw';
+                else if (mouse.x > canvas.width - size && mouse.y < size) overHandle = 'ne';
+                else if (mouse.x < size && mouse.y > canvas.height - size) overHandle = 'sw';
+                else if (mouse.x > canvas.width - size && mouse.y > canvas.height - size) overHandle = 'se';
+                canvas.style.cursor = overHandle ? overHandle + '-resize' : 'default';
+                return;
+            }
             if (!isEditing || frames.length === 0) {
                 canvas.style.cursor = 'default';
                 return;
             }
             let frame = frames[currentFrame];
             let size = 10;
-            let overHandle = '';
-            // Verificar esquinas (usando distancia euclidiana aproximada)
             if (Math.hypot(mouse.x - frame.x, mouse.y - frame.y) < size) overHandle = 'nw';
             else if (Math.hypot(mouse.x - (frame.x + frame.w), mouse.y - frame.y) < size) overHandle = 'ne';
             else if (Math.hypot(mouse.x - frame.x, mouse.y - (frame.y + frame.h)) < size) overHandle = 'sw';
@@ -497,8 +547,7 @@
             } else {
                 canvas.style.cursor = 'default';
             }
-            // Actualizar durante arrastre
-            if (dragType) {
+            if (dragType && !isResizingCanvas) {
                 let deltaX = mouse.x - dragStart.x;
                 let deltaY = mouse.y - dragStart.y;
                 let newX = dragStart.x0;
@@ -532,12 +581,87 @@
             }
         });
 
+        function canvasDragMove(e) {
+            let deltaX = e.clientX - initialClientX;
+            let deltaY = e.clientY - initialClientY;
+            let newLeft = initialLeft;
+            let newTop = initialTop;
+            let newW = initialW;
+            let newH = initialH;
+            if (dragType === 'se') {
+                newW += deltaX;
+                newH += deltaY;
+            } else if (dragType === 'sw') {
+                newLeft += deltaX;
+                newW -= deltaX;
+                newH += deltaY;
+            } else if (dragType === 'ne') {
+                newTop += deltaY;
+                newW += deltaX;
+                newH -= deltaY;
+            } else if (dragType === 'nw') {
+                newLeft += deltaX;
+                newTop += deltaY;
+                newW -= deltaX;
+                newH -= deltaY;
+            }
+            newW = Math.max(100, newW);
+            newH = Math.max(100, newH);
+            canvas.style.left = newLeft + 'px';
+            canvas.style.top = newTop + 'px';
+            canvas.width = newW;
+            canvas.height = newH;
+            draw();
+        }
+
+        function canvasDragUp(e) {
+            document.removeEventListener('mousemove', canvasDragMove);
+            document.removeEventListener('mouseup', canvasDragUp);
+            dragType = '';
+            if (scaleContent !== undefined) {
+                let scaleX = canvas.width / initialW;
+                let scaleY = canvas.height / initialH;
+                frames.forEach(frame => {
+                    frame.x = Math.max(0, frame.x * scaleX);
+                    frame.y = Math.max(0, frame.y * scaleY);
+                    frame.w = Math.max(10, frame.w * scaleX);
+                    frame.h = Math.max(10, frame.h * scaleY);
+                    if (frame.x + frame.w > canvas.width) frame.w = canvas.width - frame.x;
+                    if (frame.y + frame.h > canvas.height) frame.h = canvas.height - frame.y;
+                });
+                scaleContent = undefined;
+            }
+            draw();
+        }
+
         canvas.addEventListener('mousedown', e => {
-            if (!isEditing || frames.length === 0) return;
+            getMousePos(e);
+            let overHandle = '';
+            if (isResizingCanvas) {
+                let size = 15;
+                if (mouse.x < size && mouse.y < size) overHandle = 'nw';
+                else if (mouse.x > canvas.width - size && mouse.y < size) overHandle = 'ne';
+                else if (mouse.x < size && mouse.y > canvas.height - size) overHandle = 'sw';
+                else if (mouse.x > canvas.width - size && mouse.y > canvas.height - size) overHandle = 'se';
+                if (overHandle) {
+                    dragType = overHandle;
+                    initialClientX = e.clientX;
+                    initialClientY = e.clientY;
+                    let rect = canvas.getBoundingClientRect();
+                    initialLeft = rect.left;
+                    initialTop = rect.top;
+                    initialW = canvas.width;
+                    initialH = canvas.height;
+                    document.addEventListener('mousemove', canvasDragMove);
+                    document.addEventListener('mouseup', canvasDragUp);
+                    e.preventDefault();
+                    return;
+                }
+            } else if (!isEditing || frames.length === 0) {
+                return;
+            }
             let frame = frames[currentFrame];
             let size = 10;
-            dragType = '';
-            // Verificar esquinas
             if (Math.hypot(mouse.x - frame.x, mouse.y - frame.y) < size / 2) dragType = 'nw';
             else if (Math.hypot(mouse.x - (frame.x + frame.w), mouse.y - frame.y) < size / 2) dragType = 'ne';
             else if (Math.hypot(mouse.x - frame.x, mouse.y - (frame.y + frame.h)) < size / 2) dragType = 'sw';
@@ -553,8 +677,10 @@
         });
 
         canvas.addEventListener('mouseup', () => {
-            dragType = '';
-            canvas.style.cursor = 'default';
+            if (dragType && !isResizingCanvas) {
+                dragType = '';
+                canvas.style.cursor = 'default';
+            }
         });
 
         // FPS
@@ -570,13 +696,16 @@
                 document.getElementById('play').textContent = 'Play';
                 document.getElementById('play').style.background = 'linear-gradient(135deg, #4CAF50, #45a049)';
                 isEditing = true;
+                if (isResizingCanvas) exitResize();
                 draw();
             } else {
+                if (isResizingCanvas) exitResize();
                 isAnimating = true;
                 animationStartTime = performance.now();
                 document.getElementById('play').textContent = 'Pause';
                 document.getElementById('play').style.background = 'linear-gradient(135deg, #f44336, #da190b)';
                 isEditing = false;
+                isResizingCanvas = false;
                 animate();
             }
         });
@@ -585,10 +714,10 @@
         function animate() {
             if (!isAnimating) return;
             let now = performance.now();
-            let elapsed = (now - animationStartTime) / 1000; // segundos
+            let elapsed = (now - animationStartTime) / 1000;
             let frameUnits = Math.floor(elapsed * fps) % totalDuration;
             let cum = 0;
-            currentFrame = frames.length - 1; // default last
+            currentFrame = frames.length - 1;
             for (let i = 0; i < frames.length; i++) {
                 cum += frames[i].duration;
                 if (frameUnits < cum) {
@@ -643,18 +772,70 @@
             if (e.target.id === 'timing-modal') closeModal();
         });
 
+        // Resize functions
+        document.getElementById('resize-canvas').addEventListener('click', () => {
+            if (isResizingCanvas) {
+                exitResize();
+            } else {
+                document.getElementById('resize-modal').style.display = 'block';
+            }
+        });
+
+        function closeResizeModal() {
+            document.getElementById('resize-modal').style.display = 'none';
+        }
+
+        function startResize(doScale) {
+            closeResizeModal();
+            scaleContent = doScale;
+            originalJustify = canvasContainer.style.justifyContent;
+            originalAlign = canvasContainer.style.alignItems;
+            originalTransform = canvas.style.transform;
+            canvasContainer.style.justifyContent = 'flex-start';
+            canvasContainer.style.alignItems = 'flex-start';
+            canvas.style.position = 'absolute';
+            canvas.style.left = '0px';
+            canvas.style.top = '0px';
+            canvas.style.transform = 'none';
+            canvas.style.width = canvas.width + 'px';
+            canvas.style.height = canvas.height + 'px';
+            isResizingCanvas = true;
+            document.getElementById('resize-canvas').textContent = 'Salir Modo Resize';
+            draw();
+        }
+
+        function exitResize() {
+            isResizingCanvas = false;
+            scaleContent = undefined;
+            canvasContainer.style.justifyContent = originalJustify || 'center';
+            canvasContainer.style.alignItems = originalAlign || 'center';
+            canvas.style.position = '';
+            canvas.style.left = '';
+            canvas.style.top = '';
+            canvas.style.width = '';
+            canvas.style.height = '';
+            canvas.style.transform = originalTransform || 'translate(-50%, -50%)';
+            document.getElementById('resize-canvas').textContent = 'Modificar Tamaño del Canvas';
+            draw();
+        }
+
+        document.getElementById('resize-modal').addEventListener('click', e => {
+            if (e.target.id === 'resize-modal') closeResizeModal();
+        });
+
         // Exportar GIF
         document.getElementById('export').addEventListener('click', () => {
             if (frames.length === 0) {
                 alert('No hay frames para exportar');
                 return;
             }
+            if (isResizingCanvas) exitResize();
             let gif = new GIF({
                 workers: 2,
                 quality: 10,
                 width: canvas.width,
                 height: canvas.height,
-                workerScript: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js'
+                workerScript: 'https://cdn.jsdelivr.net/npm/gif.js.optimized@1.0.1/dist/gif.worker.js'
             });
             let frameDelay = Math.round(1000 / fps);
             for (let f = 0; f < frames.length; f++) {
