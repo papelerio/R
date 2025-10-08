@@ -214,12 +214,11 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(0,0,0,0.15);
         }
-        #apply-canvas-size {
+        #resize-canvas {
             background: linear-gradient(135deg, #2196F3, #1976D2);
             color: white;
-            margin-top: 15px;
         }
-        #apply-canvas-size:hover {
+        #resize-canvas:hover {
             background: linear-gradient(135deg, #1976D2, #0D47A1);
         }
         #play {
@@ -280,35 +279,7 @@
             width: auto;
             margin-right: 10px;
         }
-        .size-input-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 10px 0;
-        }
-        .size-input-group label {
-            margin: 0;
-            min-width: 50px;
-        }
-        .size-input-group input {
-            flex: 1;
-            padding: 8px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            text-align: center;
-            font-size: 14px;
-        }
-        .size-input-group input:focus {
-            border-color: #667eea;
-            outline: none;
-        }
-        #keep-proportion-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 10px 0;
-        }
-        #timing-modal, #transparent-modal {
+        #timing-modal, #resize-modal, #transparent-modal {
             display: none;
             position: fixed;
             top: 0;
@@ -392,21 +363,7 @@
     </div>
     <div id="middle">
         <div id="left">
-            <label>Ancho (px):</label>
-            <div class="size-input-group">
-                <input type="number" id="canvas-width" value="800" min="100">
-                <span>px</span>
-            </div>
-            <label>Alto (px):</label>
-            <div class="size-input-group">
-                <input type="number" id="canvas-height" value="600" min="100">
-                <span>px</span>
-            </div>
-            <div id="keep-proportion-group">
-                <input type="checkbox" id="keep-proportion" checked>
-                <label for="keep-proportion">Mantener proporción de imágenes</label>
-            </div>
-            <button id="apply-canvas-size" onclick="applyCanvasSize()">Aplicar</button>
+            <button id="resize-canvas">Modificar Tamaño del Canvas</button>
             <label><input type="checkbox" id="transparent-bg"> Transparente</label>
         </div>
         <div id="canvas-container">
@@ -431,6 +388,14 @@
             </table>
         </div>
     </div>
+    <div id="resize-modal">
+        <div class="modal-content">
+            <p>¿Quieres modificar el interior dependiendo del porcentaje?</p>
+            <button onclick="startResize(true)">Sí</button>
+            <button onclick="startResize(false)">No</button>
+            <button onclick="closeResizeModal()">Cancelar</button>
+        </div>
+    </div>
     <div id="transparent-modal">
         <div class="modal-content">
             <h3>¿Qué color no tiene tu GIF? Selecciona el color que desees hacer transparente</h3>
@@ -453,11 +418,15 @@
         let fps = 24;
         let totalDuration = 0;
         let isEditing = true;
+        let isResizingCanvas = false;
         let transparent = false;
         let transparentColor = '#000000'; // Color por default (negro)
+        let scaleContent = undefined;
+        let originalJustify, originalAlign, originalTransform;
         let dragType = '';
         let dragStart = {x: 0, y: 0, w: 0, h: 0, x0: 0, y0: 0};
         let mouse = {x: 0, y: 0};
+        let initialClientX, initialClientY, initialLeft, initialTop, initialW, initialH;
 
         // Inicializar dibujo
         function draw() {
@@ -476,7 +445,7 @@
                 ctx.drawImage(frame.img, frame.x, frame.y, frame.w, frame.h);
             }
             let size = 16;
-            if (isEditing && frames.length > 0) {
+            if (isEditing && !isResizingCanvas && frames.length > 0) {
                 let frame = frames[currentFrame];
                 ctx.fillStyle = '#667eea';
                 // NW
@@ -494,37 +463,28 @@
                 ctx.fillRect(frame.x + frame.w - size / 2, frame.y + frame.h - size / 2, size, size);
                 ctx.strokeRect(frame.x + frame.w - size / 2, frame.y + frame.h - size / 2, size, size);
             }
+            if (isResizingCanvas) {
+                let cSize = 20;
+                ctx.fillStyle = 'red';
+                // NW
+                ctx.fillRect(0 - 3, 0 - 3, cSize, cSize);
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(0 - 3, 0 - 3, cSize, cSize);
+                // NE
+                ctx.fillRect(canvas.width - cSize + 3, 0 - 3, cSize, cSize);
+                ctx.strokeRect(canvas.width - cSize + 3, 0 - 3, cSize, cSize);
+                // SW
+                ctx.fillRect(0 - 3, canvas.height - cSize + 3, cSize, cSize);
+                ctx.strokeRect(0 - 3, canvas.height - cSize + 3, cSize, cSize);
+                // SE
+                ctx.fillRect(canvas.width - cSize + 3, canvas.height - cSize + 3, cSize, cSize);
+                ctx.strokeRect(canvas.width - cSize + 3, canvas.height - cSize + 3, cSize, cSize);
+            }
             ctx.restore();
         }
 
-        // Aplicar nuevo tamaño del canvas
-        function applyCanvasSize() {
-            let newW = parseInt(document.getElementById('canvas-width').value) || canvas.width;
-            let newH = parseInt(document.getElementById('canvas-height').value) || canvas.height;
-            newW = Math.max(100, newW);
-            newH = Math.max(100, newH);
-            let oldW = canvas.width;
-            let oldH = canvas.height;
-            let keepProportion = document.getElementById('keep-proportion').checked;
-            canvas.width = newW;
-            canvas.height = newH;
-            // Actualizar inputs
-            document.getElementById('canvas-width').value = newW;
-            document.getElementById('canvas-height').value = newH;
-            if (keepProportion && frames.length > 0) {
-                let scaleX = newW / oldW;
-                let scaleY = newH / oldH;
-                frames.forEach(frame => {
-                    frame.x = Math.max(0, frame.x * scaleX);
-                    frame.y = Math.max(0, frame.y * scaleY);
-                    frame.w = Math.max(10, frame.w * scaleX);
-                    frame.h = Math.max(10, frame.h * scaleY);
-                    if (frame.x + frame.w > canvas.width) frame.w = canvas.width - frame.x;
-                    if (frame.y + frame.h > canvas.height) frame.h = canvas.height - frame.y;
-                });
-            }
-            draw();
-        }
+        // ... (resto de funciones iguales: updateThumbnails, updateTotal, carga de archivos, URL, paste, mouse events, FPS, play, animate, restart, edit-times, resize) ...
 
         // Actualizar miniaturas
         function updateThumbnails() {
@@ -690,7 +650,7 @@
             document.getElementById('transparent-modal').style.display = 'none';
         }
 
-        // Eventos del mouse para canvas (solo para frames individuales)
+        // Eventos del mouse para canvas (igual)
         function getMousePos(e) {
             let rect = canvas.getBoundingClientRect();
             mouse.x = e.clientX - rect.left;
@@ -700,6 +660,15 @@
         canvas.addEventListener('mousemove', e => {
             getMousePos(e);
             let overHandle = '';
+            if (isResizingCanvas) {
+                let size = 20;
+                if (mouse.x < size - 3 && mouse.y < size - 3) overHandle = 'nw';
+                else if (mouse.x > canvas.width - (size - 3) && mouse.y < size - 3) overHandle = 'ne';
+                else if (mouse.x < size - 3 && mouse.y > canvas.height - (size - 3)) overHandle = 'sw';
+                else if (mouse.x > canvas.width - (size - 3) && mouse.y > canvas.height - (size - 3)) overHandle = 'se';
+                canvas.style.cursor = overHandle ? overHandle + '-resize' : 'default';
+                return;
+            }
             if (!isEditing || frames.length === 0) {
                 canvas.style.cursor = 'default';
                 return;
@@ -720,7 +689,7 @@
             } else {
                 canvas.style.cursor = 'default';
             }
-            if (dragType) {
+            if (dragType && !isResizingCanvas) {
                 let deltaX = mouse.x - dragStart.x;
                 let deltaY = mouse.y - dragStart.y;
                 let newX = dragStart.x0;
@@ -754,9 +723,83 @@
             }
         });
 
+        function canvasDragMove(e) {
+            let deltaX = e.clientX - initialClientX;
+            let deltaY = e.clientY - initialClientY;
+            let newLeft = initialLeft;
+            let newTop = initialTop;
+            let newW = initialW;
+            let newH = initialH;
+            if (dragType === 'se') {
+                newW += deltaX;
+                newH += deltaY;
+            } else if (dragType === 'sw') {
+                newLeft += deltaX;
+                newW -= deltaX;
+                newH += deltaY;
+            } else if (dragType === 'ne') {
+                newTop += deltaY;
+                newW += deltaX;
+                newH -= deltaY;
+            } else if (dragType === 'nw') {
+                newLeft += deltaX;
+                newTop += deltaY;
+                newW -= deltaX;
+                newH -= deltaY;
+            }
+            newW = Math.max(100, newW);
+            newH = Math.max(100, newH);
+            canvas.style.left = newLeft + 'px';
+            canvas.style.top = newTop + 'px';
+            canvas.width = newW;
+            canvas.height = newH;
+            draw();
+        }
+
+        function canvasDragUp(e) {
+            document.removeEventListener('mousemove', canvasDragMove);
+            document.removeEventListener('mouseup', canvasDragUp);
+            dragType = '';
+            if (scaleContent !== undefined) {
+                let scaleX = canvas.width / initialW;
+                let scaleY = canvas.height / initialH;
+                frames.forEach(frame => {
+                    frame.x = Math.max(0, frame.x * scaleX);
+                    frame.y = Math.max(0, frame.y * scaleY);
+                    frame.w = Math.max(10, frame.w * scaleX);
+                    frame.h = Math.max(10, frame.h * scaleY);
+                    if (frame.x + frame.w > canvas.width) frame.w = canvas.width - frame.x;
+                    if (frame.y + frame.h > canvas.height) frame.h = canvas.height - frame.y;
+                });
+                scaleContent = undefined;
+            }
+            draw();
+        }
+
         canvas.addEventListener('mousedown', e => {
             getMousePos(e);
-            if (!isEditing || frames.length === 0) {
+            let overHandle = '';
+            if (isResizingCanvas) {
+                let size = 20;
+                if (mouse.x < size - 3 && mouse.y < size - 3) overHandle = 'nw';
+                else if (mouse.x > canvas.width - (size - 3) && mouse.y < size - 3) overHandle = 'ne';
+                else if (mouse.x < size - 3 && mouse.y > canvas.height - (size - 3)) overHandle = 'sw';
+                else if (mouse.x > canvas.width - (size - 3) && mouse.y > canvas.height - (size - 3)) overHandle = 'se';
+                if (overHandle) {
+                    dragType = overHandle;
+                    initialClientX = e.clientX;
+                    initialClientY = e.clientY;
+                    let rect = canvas.getBoundingClientRect();
+                    initialLeft = rect.left;
+                    initialTop = rect.top;
+                    initialW = canvas.width;
+                    initialH = canvas.height;
+                    document.addEventListener('mousemove', canvasDragMove);
+                    document.removeEventListener('mouseup', canvasDragUp);
+                    e.preventDefault();
+                    return;
+                }
+            } else if (!isEditing || frames.length === 0) {
                 return;
             }
             let frame = frames[currentFrame];
@@ -776,7 +819,7 @@
         });
 
         canvas.addEventListener('mouseup', () => {
-            if (dragType) {
+            if (dragType && !isResizingCanvas) {
                 dragType = '';
                 canvas.style.cursor = 'default';
             }
@@ -795,13 +838,16 @@
                 document.getElementById('play').textContent = 'Play';
                 document.getElementById('play').style.background = 'linear-gradient(135deg, #4CAF50, #45a049)';
                 isEditing = true;
+                if (isResizingCanvas) exitResize();
                 draw();
             } else {
+                if (isResizingCanvas) exitResize();
                 isAnimating = true;
                 animationStartTime = performance.now();
                 document.getElementById('play').textContent = 'Pause';
                 document.getElementById('play').style.background = 'linear-gradient(135deg, #f44336, #da190b)';
                 isEditing = false;
+                isResizingCanvas = false;
                 animate();
             }
         });
@@ -868,6 +914,57 @@
             if (e.target.id === 'timing-modal') closeModal();
         });
 
+        // Resize functions
+        document.getElementById('resize-canvas').addEventListener('click', () => {
+            if (isResizingCanvas) {
+                exitResize();
+            } else {
+                document.getElementById('resize-modal').style.display = 'block';
+            }
+        });
+
+        function closeResizeModal() {
+            document.getElementById('resize-modal').style.display = 'none';
+        }
+
+        function startResize(doScale) {
+            closeResizeModal();
+            scaleContent = doScale;
+            originalJustify = canvasContainer.style.justifyContent;
+            originalAlign = canvasContainer.style.alignItems;
+            originalTransform = canvas.style.transform;
+            canvasContainer.style.justifyContent = 'flex-start';
+            canvasContainer.style.alignItems = 'flex-start';
+            canvas.style.position = 'absolute';
+            canvas.style.left = '0px';
+            canvas.style.top = '0px';
+            canvas.style.transform = 'none';
+            canvas.style.width = canvas.width + 'px';
+            canvas.style.height = canvas.height + 'px';
+            isResizingCanvas = true;
+            document.getElementById('resize-canvas').textContent = 'Salir Modo Resize';
+            draw();
+        }
+
+        function exitResize() {
+            isResizingCanvas = false;
+            scaleContent = undefined;
+            canvasContainer.style.justifyContent = originalJustify || 'center';
+            canvasContainer.style.alignItems = originalAlign || 'center';
+            canvas.style.position = '';
+            canvas.style.left = '';
+            canvas.style.top = '';
+            canvas.style.width = '';
+            canvas.style.height = '';
+            canvas.style.transform = originalTransform || 'translate(-50%, -50%)';
+            document.getElementById('resize-canvas').textContent = 'Modificar Tamaño del Canvas';
+            draw();
+        }
+
+        document.getElementById('resize-modal').addEventListener('click', e => {
+            if (e.target.id === 'resize-modal') closeResizeModal();
+        });
+
         // Cerrar modal transparente al click fuera
         document.getElementById('transparent-modal').addEventListener('click', e => {
             if (e.target.id === 'transparent-modal') cancelTransparent();
@@ -879,6 +976,7 @@
                 alert('No hay frames para exportar');
                 return;
             }
+            if (isResizingCanvas) exitResize();
             let oldEditing = isEditing;
             isEditing = false;
             try {
@@ -887,7 +985,7 @@
                 const encoder = GIFEncoder();
                 const width = canvas.width;
                 const height = canvas.height;
-                const delayCS = Math.round(100 / fps); // Delay en 1/100 segundos
+                const frameDelay = Math.round(1000 / fps);
 
                 // Convertir hex a RGB para comparación
                 const hexToRgb = (hex) => {
@@ -949,7 +1047,7 @@
                     const index = applyPalette(data, palette, aOptions);
 
                     // Opciones para writeFrame
-                    const wOptions = { palette, delay: delayCS };
+                    const wOptions = { palette };
                     if (transparent) {
                         wOptions.transparent = true;
                         wOptions.transparentIndex = transparentIndex;
