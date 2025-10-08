@@ -320,35 +320,6 @@
             border-color: #667eea;
             outline: none;
         }
-        .progress-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-            flex-direction: column;
-            color: white;
-            font-size: 18px;
-        }
-        .progress-bar {
-            width: 300px;
-            height: 20px;
-            background: #333;
-            border-radius: 10px;
-            margin-top: 20px;
-            overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            width: 0%;
-            transition: width 0.3s;
-        }
     </style>
 </head>
 <body>
@@ -852,80 +823,42 @@
             if (e.target.id === 'resize-modal') closeResizeModal();
         });
 
-        // Exportar GIF - VERSIÓN CORREGIDA
+        // Exportar GIF
         async function exportGif() {
             if (frames.length === 0) {
                 alert('No hay frames para exportar');
                 return;
             }
-            
             if (isResizingCanvas) exitResize();
-            if (isAnimating) {
-                cancelAnimationFrame(animId);
-                isAnimating = false;
-                document.getElementById('play').textContent = 'Play';
-                document.getElementById('play').style.background = 'linear-gradient(135deg, #4CAF50, #45a049)';
-                isEditing = true;
-            }
-            
-            // Crear overlay de progreso
-            const progressOverlay = document.createElement('div');
-            progressOverlay.className = 'progress-overlay';
-            progressOverlay.innerHTML = `
-                <div>Generando GIF...</div>
-                <div class="progress-bar">
-                    <div class="progress-fill"></div>
-                </div>
-            `;
-            document.body.appendChild(progressOverlay);
-            
             try {
-                // Calcular el número total de frames
-                const totalFrames = frames.reduce((sum, frame) => sum + frame.duration, 0);
-                let processedFrames = 0;
-                
-                // Configuración simplificada de GIF.js
+                const response = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+                if (!response.ok) throw new Error('Failed to fetch worker');
+                const workerBlob = await response.blob();
+                const workerUrl = URL.createObjectURL(workerBlob);
+
                 let gif = new GIF({
-                    workers: 2,
+                    workers: 4,
+                    workerScript: workerUrl,
                     quality: 10,
                     width: canvas.width,
-                    height: canvas.height,
-                    workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
+                    height: canvas.height
                 });
 
                 let frameDelay = Math.round(1000 / fps);
-                let currentFrameBackup = currentFrame;
-                
-                // Agregar frames al GIF
                 for (let f = 0; f < frames.length; f++) {
-                    currentFrame = f;
-                    draw();
-                    
-                    // Agregar el frame según su duración
-                    for (let d = 0; d < frames[f].duration; d++) {
-                        // Crear un canvas temporal para asegurar que el frame se copie correctamente
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = canvas.width;
-                        tempCanvas.height = canvas.height;
-                        const tempCtx = tempCanvas.getContext('2d');
-                        tempCtx.drawImage(canvas, 0, 0);
-                        
-                        gif.addFrame(tempCtx, {copy: true, delay: frameDelay});
-                        
-                        // Actualizar progreso
-                        processedFrames++;
-                        const progress = (processedFrames / totalFrames) * 100;
-                        document.querySelector('.progress-fill').style.width = `${progress}%`;
+                    let frame = frames[f];
+                    let tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = canvas.width;
+                    tempCanvas.height = canvas.height;
+                    let tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.clearRect(0, 0, canvas.width, canvas.height);
+                    tempCtx.drawImage(frame.img, frame.x, frame.y, frame.w, frame.h);
+                    for (let d = 0; d < frame.duration; d++) {
+                        gif.addFrame(tempCanvas, {delay: frameDelay});
                     }
                 }
-                
-                currentFrame = currentFrameBackup;
-                draw();
 
-                gif.on('finished', function(blob) {
-                    // Remover overlay de progreso
-                    document.body.removeChild(progressOverlay);
-                    
+                gif.on('finished', blob => {
                     let url = URL.createObjectURL(blob);
                     let a = document.createElement('a');
                     a.href = url;
@@ -933,24 +866,12 @@
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
-                    setTimeout(() => {
-                        URL.revokeObjectURL(url);
-                    }, 1000);
-                    
-                    alert('GIF exportado exitosamente!');
-                });
-
-                gif.on('error', function(error) {
-                    console.error('Error al generar GIF:', error);
-                    document.body.removeChild(progressOverlay);
-                    alert('Error al generar el GIF: ' + error.message);
+                    URL.revokeObjectURL(url);
+                    URL.revokeObjectURL(workerUrl);
                 });
 
                 gif.render();
-                
             } catch (error) {
-                console.error('Error en exportGif:', error);
-                document.body.removeChild(progressOverlay);
                 alert('Error al exportar: ' + error.message);
             }
         }
