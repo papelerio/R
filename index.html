@@ -390,7 +390,6 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/gifenc@1.0.3/gifenc.js"></script>
     <script>
         // Variables globales
         let frames = []; // {img: Image, x: number, y: number, w: number, h: number, duration: number}
@@ -939,7 +938,7 @@
             if (e.target.id === 'resize-modal') closeResizeModal();
         });
 
-        // Exportar GIF con gifenc (soporte para transparencia)
+        // Exportar GIF con gifenc (usando import dinámico para browser)
         async function exportGif() {
             if (frames.length === 0) {
                 alert('No hay frames para exportar');
@@ -949,40 +948,62 @@
             let oldEditing = isEditing;
             isEditing = false; // Deseleccionar para no dibujar handles
             try {
-                const { Gifenc } = window;
-                const encoder = new Gifenc({
-                    width: canvas.width,
-                    height: canvas.height
-                });
+                // Import dinámico de gifenc
+                const { GIFEncoder, quantize, applyPalette } = await import('https://unpkg.com/gifenc');
 
-                let frameDelay = Math.round(1000 / fps);
+                const encoder = GIFEncoder(); // Crear encoder una vez
+                const width = canvas.width;
+                const height = canvas.height;
+                const frameDelay = Math.round(1000 / fps);
+
                 for (let f = 0; f < frames.length; f++) {
-                    let frame = frames[f];
-                    let tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = canvas.width;
-                    tempCanvas.height = canvas.height;
-                    let tempCtx = tempCanvas.getContext('2d');
-                    // Limpiar sin rellenar para preservar alpha (transparencia)
-                    tempCtx.clearRect(0, 0, canvas.width, canvas.height);
-                    // NO rellenar con blanco si transparent=true; gifenc maneja alpha
+                    const frame = frames[f];
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = width;
+                    tempCanvas.height = height;
+                    const tempCtx = tempCanvas.getContext('2d');
+
+                    // Limpiar sin rellenar para preservar alpha
+                    tempCtx.clearRect(0, 0, width, height);
                     if (!transparent) {
                         tempCtx.fillStyle = 'white';
-                        tempCtx.fillRect(0, 0, canvas.width, canvas.height);
+                        tempCtx.fillRect(0, 0, width, height);
                     }
                     tempCtx.drawImage(frame.img, frame.x, frame.y, frame.w, frame.h);
-                    // Obtener datos de imagen con alpha
-                    const imageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
-                    // Agregar el frame (duplicar por duración)
+
+                    // Obtener datos RGBA
+                    const imageData = tempCtx.getImageData(0, 0, width, height);
+                    const data = imageData.data;
+
+                    // Opciones para quantize: soporte alpha si transparente
+                    const qOptions = transparent ? { format: 'rgba4444', oneBitAlpha: true } : {};
+                    const palette = quantize(data, 256, qOptions);
+
+                    // Aplicar paleta
+                    const aOptions = transparent ? { format: 'rgba4444' } : {};
+                    const index = applyPalette(data, palette, aOptions);
+
+                    // Opciones para writeFrame
+                    const wOptions = { palette };
+                    if (transparent) {
+                        wOptions.transparent = true;
+                        // Encontrar índice transparente (el primero con alpha=0)
+                        wOptions.transparentIndex = palette.findIndex(p => p[3] === 0) || 0;
+                    }
+
+                    // Agregar frame (duplicar por duración)
                     for (let d = 0; d < frame.duration; d++) {
-                        encoder.writeFrame(imageData.data, { delay: frameDelay });
+                        encoder.writeFrame(index, width, height, wOptions);
+                        // Delay se maneja en GIF via opciones, pero gifenc no tiene delay directo; usamos duplicados como antes
                     }
                 }
 
-                // Finalizar y descargar
-                const gifData = encoder.finish();
+                // Finalizar
+                encoder.finish();
+                const gifData = encoder.bytes();
                 const blob = new Blob([gifData], { type: 'image/gif' });
-                let url = URL.createObjectURL(blob);
-                let a = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
                 a.href = url;
                 a.download = 'animacion.gif';
                 document.body.appendChild(a);
@@ -990,7 +1011,8 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             } catch (error) {
-                alert('Error al exportar: ' + error.message);
+                console.error('Error en export:', error);
+                alert('Error al exportar: ' + (error.message || 'Falla en la librería gifenc. Verifica conexión.'));
             } finally {
                 isEditing = oldEditing;
                 draw();
