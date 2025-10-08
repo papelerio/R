@@ -96,6 +96,26 @@
             border-radius: 12px;
             color: #667eea;
         }
+        .delete-btn {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: red;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            font-size: 10px;
+            cursor: pointer;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .delete-btn:hover {
+            background: darkred;
+        }
         #url-input {
             margin-left: auto;
             background: linear-gradient(135deg, #ffd700, #ffed4e);
@@ -256,6 +276,10 @@
             font-weight: 500;
             color: #555;
         }
+        #transparent-bg {
+            width: auto;
+            margin-right: 10px;
+        }
         #timing-modal, #resize-modal {
             display: none;
             position: fixed;
@@ -334,6 +358,7 @@
     <div id="middle">
         <div id="left">
             <button id="resize-canvas">Modificar Tamaño del Canvas</button>
+            <label><input type="checkbox" id="transparent-bg"> Transparente</label>
         </div>
         <div id="canvas-container">
             <canvas id="canvas" width="800" height="600"></canvas>
@@ -380,6 +405,7 @@
         let totalDuration = 0;
         let isEditing = true;
         let isResizingCanvas = false;
+        let transparent = false;
         let scaleContent = undefined;
         let originalJustify, originalAlign, originalTransform;
         let dragType = '';
@@ -390,26 +416,50 @@
         // Inicializar dibujo
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (!transparent) {
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
             if (frames.length > 0) {
                 let frame = frames[currentFrame];
                 ctx.drawImage(frame.img, frame.x, frame.y, frame.w, frame.h);
             }
-            let size = 10;
+            let size = 12;
             if (isEditing && !isResizingCanvas && frames.length > 0) {
                 let frame = frames[currentFrame];
                 ctx.fillStyle = '#667eea';
+                // NW
                 ctx.fillRect(frame.x - size / 2, frame.y - size / 2, size, size);
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(frame.x - size / 2, frame.y - size / 2, size, size);
+                // NE
                 ctx.fillRect(frame.x + frame.w - size / 2, frame.y - size / 2, size, size);
+                ctx.strokeRect(frame.x + frame.w - size / 2, frame.y - size / 2, size, size);
+                // SW
                 ctx.fillRect(frame.x - size / 2, frame.y + frame.h - size / 2, size, size);
+                ctx.strokeRect(frame.x - size / 2, frame.y + frame.h - size / 2, size, size);
+                // SE
                 ctx.fillRect(frame.x + frame.w - size / 2, frame.y + frame.h - size / 2, size, size);
+                ctx.strokeRect(frame.x + frame.w - size / 2, frame.y + frame.h - size / 2, size, size);
             }
             if (isResizingCanvas) {
                 let cSize = 15;
                 ctx.fillStyle = 'red';
+                // NW
                 ctx.fillRect(0, 0, cSize, cSize);
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(0, 0, cSize, cSize);
+                // NE
                 ctx.fillRect(canvas.width - cSize, 0, cSize, cSize);
+                ctx.strokeRect(canvas.width - cSize, 0, cSize, cSize);
+                // SW
                 ctx.fillRect(0, canvas.height - cSize, cSize, cSize);
+                ctx.strokeRect(0, canvas.height - cSize, cSize, cSize);
+                // SE
                 ctx.fillRect(canvas.width - cSize, canvas.height - cSize, cSize, cSize);
+                ctx.strokeRect(canvas.width - cSize, canvas.height - cSize, cSize, cSize);
             }
         }
 
@@ -426,8 +476,31 @@
                 span.textContent = i + 1;
                 let img = document.createElement('img');
                 img.src = frame.img.src;
+                let deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.textContent = '×';
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    if (confirm('¿Eliminar esta imagen?')) {
+                        let oldCurrent = currentFrame;
+                        frames.splice(i, 1);
+                        updateThumbnails();
+                        updateTotal();
+                        if (frames.length === 0) {
+                            currentFrame = 0;
+                        } else if (oldCurrent >= frames.length) {
+                            currentFrame = frames.length - 1;
+                        } else if (oldCurrent < i) {
+                            // no change
+                        } else {
+                            currentFrame = oldCurrent - 1;
+                        }
+                        draw();
+                    }
+                };
                 div.appendChild(span);
                 div.appendChild(img);
+                div.appendChild(deleteBtn);
                 div.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', i));
                 div.addEventListener('dragover', e => e.preventDefault());
                 div.addEventListener('drop', e => {
@@ -444,9 +517,11 @@
                         draw();
                     }
                 });
-                div.addEventListener('click', () => {
-                    currentFrame = i;
-                    draw();
+                div.addEventListener('click', (e) => {
+                    if (e.target !== deleteBtn) {
+                        currentFrame = i;
+                        draw();
+                    }
                 });
                 thumbs.appendChild(div);
             });
@@ -508,6 +583,12 @@
             }
         });
 
+        // Toggle transparente
+        document.getElementById('transparent-bg').addEventListener('change', e => {
+            transparent = e.target.checked;
+            draw();
+        });
+
         // Eventos del mouse para canvas
         function getMousePos(e) {
             let rect = canvas.getBoundingClientRect();
@@ -532,7 +613,7 @@
                 return;
             }
             let frame = frames[currentFrame];
-            let size = 10;
+            let size = 12;
             if (Math.hypot(mouse.x - frame.x, mouse.y - frame.y) < size) overHandle = 'nw';
             else if (Math.hypot(mouse.x - (frame.x + frame.w), mouse.y - frame.y) < size) overHandle = 'ne';
             else if (Math.hypot(mouse.x - frame.x, mouse.y - (frame.y + frame.h)) < size) overHandle = 'sw';
@@ -661,7 +742,7 @@
                 return;
             }
             let frame = frames[currentFrame];
-            let size = 10;
+            let size = 12;
             if (Math.hypot(mouse.x - frame.x, mouse.y - frame.y) < size / 2) dragType = 'nw';
             else if (Math.hypot(mouse.x - (frame.x + frame.w), mouse.y - frame.y) < size / 2) dragType = 'ne';
             else if (Math.hypot(mouse.x - frame.x, mouse.y - (frame.y + frame.h)) < size / 2) dragType = 'sw';
@@ -852,6 +933,10 @@
                     tempCanvas.height = canvas.height;
                     let tempCtx = tempCanvas.getContext('2d');
                     tempCtx.clearRect(0, 0, canvas.width, canvas.height);
+                    if (!transparent) {
+                        tempCtx.fillStyle = 'white';
+                        tempCtx.fillRect(0, 0, canvas.width, canvas.height);
+                    }
                     tempCtx.drawImage(frame.img, frame.x, frame.y, frame.w, frame.h);
                     for (let d = 0; d < frame.duration; d++) {
                         gif.addFrame(tempCanvas, {delay: frameDelay});
