@@ -887,7 +887,7 @@
                 const encoder = GIFEncoder();
                 const width = canvas.width;
                 const height = canvas.height;
-                const frameDelay = Math.round(1000 / fps);
+                const delayCS = Math.round(100 / fps); // Delay en 1/100 segundos
 
                 // Convertir hex a RGB para comparación
                 const hexToRgb = (hex) => {
@@ -949,7 +949,7 @@
                     const index = applyPalette(data, palette, aOptions);
 
                     // Opciones para writeFrame
-                    const wOptions = { palette };
+                    const wOptions = { palette, delay: delayCS };
                     if (transparent) {
                         wOptions.transparent = true;
                         wOptions.transparentIndex = transparentIndex;
