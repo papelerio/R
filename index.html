@@ -568,19 +568,36 @@
         // Pegar imagen (Ctrl+V)
         document.addEventListener('paste', e => {
             let items = e.clipboardData.items;
+            let pendingImages = 0;
+            let imageCount = 0;
             for (let item of items) {
                 if (item.type.startsWith('image/')) {
+                    imageCount++;
+                    pendingImages++;
                     let blob = item.getAsFile();
                     let img = new Image();
                     img.onload = () => {
                         frames.push({img, x: 0, y: 0, w: canvas.width, h: canvas.height, duration: 1});
-                        updateThumbnails();
-                        updateTotal();
-                        draw();
+                        if (--pendingImages === 0) {
+                            updateThumbnails();
+                            updateTotal();
+                            draw();
+                        }
+                    };
+                    img.onerror = () => {
+                        if (--pendingImages === 0) {
+                            updateThumbnails();
+                            updateTotal();
+                            draw();
+                        }
                     };
                     img.src = URL.createObjectURL(blob);
-                    return;
                 }
+            }
+            if (imageCount > 0 && pendingImages === 0) {
+                updateThumbnails();
+                updateTotal();
+                draw();
             }
         });
 
